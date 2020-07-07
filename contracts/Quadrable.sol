@@ -41,7 +41,7 @@ library Quadrable {
     }
 
     // Strand state (128 bytes):
-    //     uint256: [0 padding...] [4 bytes: encodedStrandOffset] [1 byte: depth] [1 byte: merged] [4 bytes: next] [4 bytes: nodeAddr]
+    //     uint256: [0 padding...] [1 byte: depth] [1 byte: merged] [4 bytes: next] [4 bytes: nodeAddr]
     //     [32 bytes: keyHash]
     //     [64 bytes: possibly containing leaf node for this strand]
 
@@ -73,17 +73,15 @@ library Quadrable {
         }
     }
 
-    function packStrandState(uint256 encodedStrandOffset, uint256 depth, uint256 merged, uint256 next, uint256 nodeAddr) private pure returns (uint256 strandState) {
-        strandState = (encodedStrandOffset << (10*8)) |
-                      (depth << (9*8)) |
+    function packStrandState(uint256 depth, uint256 merged, uint256 next, uint256 nodeAddr) private pure returns (uint256 strandState) {
+        strandState = (depth << (9*8)) |
                       (merged << (8*8)) |
                       (next << (4*8)) |
                       nodeAddr;
     }
 
-    function unpackStrandState(uint256 strandState) private pure returns (uint256 encodedStrandOffset, uint256 depth, uint256 merged, uint256 next, uint256 nodeAddr) {
-        encodedStrandOffset = strandState >> (10*8);
-        depth = (strandState >> (9*8)) & 0xFF;
+    function unpackStrandState(uint256 strandState) private pure returns (uint256 depth, uint256 merged, uint256 next, uint256 nodeAddr) {
+        depth = strandState >> (9*8);
         merged = (strandState >> (8*8)) & 0xFF;
         next = (strandState >> (4*8)) & 0xFFFFFFFF;
         nodeAddr = strandState & 0xFFFFFFFF;
@@ -191,7 +189,7 @@ library Quadrable {
         _processCmds(proof);
 
         (uint256 strandState,) = getStrandState(proof, 0);
-        (, uint256 depth,, uint256 next,) = unpackStrandState(strandState);
+        (uint256 depth,, uint256 next,) = unpackStrandState(strandState); // FIXME: use individual getters
         require(next == proof.numStrands, "next linked list not empty");
         require(depth == 0, "strand depth not at root");
 
@@ -253,7 +251,7 @@ library Quadrable {
                 offset += 32;
             }
 
-            uint256 strandState = packStrandState(encodedStrandOffset, depth, 0, numStrands+1, 0);
+            uint256 strandState = packStrandState(depth, 0, numStrands+1, 0);
 
             assembly {
                 let strandStateMemOffset := add(mload(0x40), mul(128, numStrands)) // FIXME shift left
@@ -307,7 +305,7 @@ library Quadrable {
 
             if ((cmd & 0x80) == 0) {
                 (uint256 strandState, bytes32 keyHash) = getStrandState(proof, currStrand);
-                (uint256 encodedStrandOffset, uint256 depth, uint256 merged, uint256 next, uint256 nodeAddr) = unpackStrandState(strandState);
+                (uint256 depth, uint256 merged, uint256 next, uint256 nodeAddr) = unpackStrandState(strandState);
                 require(merged == 0, "can't operate on merged strand");
 
                 if (cmd == 0) {
@@ -359,7 +357,7 @@ library Quadrable {
                     }
                 }
 
-                uint256 newStrandState = packStrandState(encodedStrandOffset, depth, merged, next, nodeAddr);
+                uint256 newStrandState = packStrandState(depth, merged, next, nodeAddr);
                 saveStrandState(proof, currStrand, newStrandState);
             } else {
                 // jump
