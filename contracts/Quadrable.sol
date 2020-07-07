@@ -47,8 +47,8 @@ library Quadrable {
 
     // Node (64 bytes):
     //     uint256 nodeContents: [0 padding...] [nodeType specific (see below)] [1 byte: nodeType]
-    //                Leaf: [4 bytes: encodedStrandOffset]
-    //         WitnessLeaf: [4 bytes: encodedStrandOffset]
+    //                Leaf: [4 bytes: valAddr] [4 bytes: valLen] [4 bytes: keyHashAddr]
+    //         WitnessLeaf: [4 bytes: keyHashAddr]
     //             Witness: unused
     //              Branch: [4 bytes: leftNodeAddr] [4 bytes: rightNodeAddr]
     //     bytes32 nodeHash
@@ -169,18 +169,24 @@ library Quadrable {
         return nodeContents >> (5*8);
     }
 
-    function getNodeLeafKeyHash(Proof memory proof, uint256 nodeAddr) private pure returns (bytes32 keyHash) {
-        bytes memory encoded = proof.encoded;
-
+    function getNodeLeafKeyHash(uint256 nodeAddr) private pure returns (bytes32 keyHash) {
         assembly {
             let nodeContents := mload(nodeAddr)
-            let encodedStrandOffset := shr(mul(1, 8), nodeContents)
-            keyHash := mload(add(add(add(encoded, 0x20), encodedStrandOffset), 2))
+            let keyHashAddr := and(shr(mul(1, 8), nodeContents), 0xFFFFFFFF)
+            keyHash := mload(keyHashAddr)
+        }
+    }
+
+    function getNodeLeafVal(uint256 nodeAddr) private pure returns (uint256 valAddr, uint256 valLen) {
+        assembly {
+            let nodeContents := mload(nodeAddr)
+            valAddr := and(shr(mul(9, 8), nodeContents), 0xFFFFFFFF)
+            valLen := and(shr(mul(5, 8), nodeContents), 0xFFFFFFFF)
         }
     }
 
 
-    function importProof(bytes memory encoded) internal view returns (Proof memory) {
+    function importProof(bytes memory encoded) internal pure returns (Proof memory) {
         Proof memory proof;
 
         proof.encoded = encoded;
@@ -197,12 +203,12 @@ library Quadrable {
     }
 
 
-    function getRootNodeAddr(Proof memory proof) internal view returns (uint256 nodeAddr) {
+    function getRootNodeAddr(Proof memory proof) internal pure returns (uint256 nodeAddr) {
         (uint256 strandState,) = getStrandState(proof, 0);
         nodeAddr = strandStateNodeAddr(strandState);
     }
 
-    function getRootHash(Proof memory proof) internal view returns (bytes32) {
+    function getRootHash(Proof memory proof) internal pure returns (bytes32) {
         return getNodeHash(getRootNodeAddr(proof));
     }
 
@@ -225,14 +231,17 @@ library Quadrable {
         // Setup strand state and embedded leaf nodes
 
         while (true) {
-            uint256 encodedStrandOffset = offset;
             StrandType strandType = StrandType(BytesLib.toUint8(encoded, offset++));
             if (strandType == StrandType.Invalid) break;
 
             uint8 depth = BytesLib.toUint8(encoded, offset++);
+
+            uint256 keyHashAddr;
+            assembly { keyHashAddr := add(add(encoded, 0x20), offset) }
             bytes32 keyHash = BytesLib.toBytes32(encoded, offset);
             offset += 32;
 
+            uint256 nodeContents;
             bytes32 valHash;
 
             if (strandType == StrandType.Leaf) {
@@ -243,10 +252,23 @@ library Quadrable {
                     valLen = (valLen << 7) | (b & 0x7F);
                 } while ((b & 0x80) != 0);
 
-                assembly { valHash := keccak256(add(add(encoded, 0x20), offset), valLen) }
+                uint256 valAddr;
+
+                assembly {
+                    valAddr := add(add(encoded, 0x20), offset)
+                    valHash := keccak256(valAddr, valLen)
+                }
+
+                nodeContents = valAddr << (9*8) |
+                               valLen << (5*8) |
+                               keyHashAddr << (1*8) |
+                               uint256(NodeType.Leaf);
 
                 offset += valLen;
             } else if (strandType == StrandType.WitnessLeaf) {
+                nodeContents = keyHashAddr << (1*8) |
+                               uint256(NodeType.WitnessLeaf);
+
                 valHash = BytesLib.toBytes32(encoded, offset);
                 offset += 32;
             }
@@ -257,13 +279,6 @@ library Quadrable {
                 let strandStateMemOffset := add(mload(0x40), mul(128, numStrands)) // FIXME shift left
 
                 if iszero(eq(strandType, 2)) { // StrandType.WitnessEmpty
-                    let nodeType := 1 // Default NodeType.Leaf
-                    if eq(strandType, 1) { // ... unless StrandType.WitnessLeaf
-                        nodeType := 3 // then NodeType.WitnessLeaf
-                    }
-
-                    let nodeContents := or(shl(8, encodedStrandOffset), nodeType)
-
                     mstore(0, keyHash)
                     mstore(32, valHash)
                     let nodeHash := keccak256(0, 65) // relies on most-significant byte of free space pointer being '\0'
@@ -294,7 +309,7 @@ library Quadrable {
         proof.startOfCmds = offset;
     }
 
-    function _processCmds(Proof memory proof) private view {
+    function _processCmds(Proof memory proof) private pure {
         bytes memory encoded = proof.encoded;
         uint256 offset = proof.startOfCmds;
 
@@ -379,7 +394,32 @@ library Quadrable {
         }
     }
 
-    function get(Proof memory proof, bytes32 keyHash) internal view returns (bool found, bytes memory) {
+
+
+
+    // https://github.com/ethereum/solidity-examples/blob/master/src/unsafe/Memory.sol
+    uint internal constant WORD_SIZE = 32;
+    function copy(uint src, uint dest, uint len) private pure {
+        // Copy word-length chunks while possible
+        for (; len >= WORD_SIZE; len -= WORD_SIZE) {
+            assembly {
+                mstore(dest, mload(src))
+            }
+            dest += WORD_SIZE;
+            src += WORD_SIZE;
+        }
+
+        // Copy remaining bytes
+        uint mask = 256 ** (WORD_SIZE - len) - 1;
+        assembly {
+            let srcpart := and(mload(src), not(mask))
+            let destpart := and(mload(dest), mask)
+            mstore(dest, or(destpart, srcpart))
+        }
+    }
+
+
+    function get(Proof memory proof, bytes32 keyHash) internal pure returns (bool found, bytes memory) {
         uint256 nodeAddr = getRootNodeAddr(proof);
         uint256 depthMask = 1 << 255;
         NodeType nodeType;
@@ -402,15 +442,29 @@ library Quadrable {
         }
 
         if (nodeType == NodeType.Leaf) {
-            bytes32 leafKeyHash = getNodeLeafKeyHash(proof, nodeAddr);
+            bytes32 leafKeyHash = getNodeLeafKeyHash(nodeAddr);
 
             if (leafKeyHash == keyHash) {
-                return (true, "ASDF");
+                (uint256 valAddr, uint256 valLen) = getNodeLeafVal(nodeAddr);
+
+                bytes memory val;
+                uint256 copyDest;
+
+                assembly {
+                    val := mload(0x40)
+                    mstore(val, valLen)
+                    copyDest := add(val, 32)
+                    mstore(0x40, add(val, add(valLen, 32)))
+                }
+
+                copy(valAddr, copyDest, valLen);
+
+                return (true, val);
             } else {
                 return (false, "");
             }
         } else if (nodeType == NodeType.WitnessLeaf) {
-            bytes32 leafKeyHash = getNodeLeafKeyHash(proof, nodeAddr);
+            bytes32 leafKeyHash = getNodeLeafKeyHash(nodeAddr);
 
             require(leafKeyHash != keyHash, "incomplete tree (WitnessLeaf)");
 

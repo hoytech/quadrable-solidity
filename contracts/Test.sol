@@ -14,7 +14,7 @@ contract Test {
         bytes32 rootHash = Quadrable.getRootHash(proof);
 
         for (uint256 i = 0; i < queries.length; i++) {
-            (bool found, bytes memory res) = Quadrable.get(proof, keccak256(abi.encodePacked(queries[i])));
+            (, bytes memory res) = Quadrable.get(proof, keccak256(abi.encodePacked(queries[i])));
             results[i] = res;
         }
 
