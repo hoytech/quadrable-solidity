@@ -25,12 +25,12 @@ library Quadrable {
     }
 
     enum NodeType { // Internal values (different from C++ implementation)
-        Leaf, // = 0
-        Witness, // = 1
-        WitnessLeaf, // = 2
-        Branch // = 3
+        Empty, // = 0
+        Leaf, // = 1
+        Witness, // = 2
+        WitnessLeaf, // = 3
+        Branch // = 4
     }
-
 
     struct Proof {
         bytes encoded;
@@ -62,6 +62,7 @@ library Quadrable {
         }
     }
 
+    // FIXME: break-out separate function to get keyHash
     function getStrandState(Proof memory proof, uint256 strandIndex) private pure returns (uint256 strandState, bytes32 keyHash) {
         uint256 strandStateAddr = proof.strandStateAddr;
 
@@ -134,11 +135,49 @@ library Quadrable {
         }
     }
 
+    function getNodeType(uint256 nodeAddr) private pure returns (NodeType nodeType) {
+        if (nodeAddr == 0) return NodeType.Empty;
+
+        assembly {
+            nodeType := and(mload(nodeAddr), 0xFF)
+        }
+    }
+
     function getNodeHash(uint256 nodeAddr) private pure returns (bytes32 nodeHash) {
         if (nodeAddr == 0) return bytes32(uint256(0));
 
         assembly {
             nodeHash := mload(add(nodeAddr, 32))
+        }
+    }
+
+    function getNodeBranchLeft(uint256 nodeAddr) private pure returns (uint256) {
+        uint256 nodeContents;
+
+        assembly {
+            nodeContents := mload(nodeAddr)
+        }
+
+        return (nodeContents >> (1*8)) & 0xFFFFFFFF;
+    }
+
+    function getNodeBranchRight(uint256 nodeAddr) private pure returns (uint256) {
+        uint256 nodeContents;
+
+        assembly {
+            nodeContents := mload(nodeAddr)
+        }
+
+        return nodeContents >> (5*8);
+    }
+
+    function getNodeLeafKeyHash(Proof memory proof, uint256 nodeAddr) private pure returns (bytes32 keyHash) {
+        bytes memory encoded = proof.encoded;
+
+        assembly {
+            let nodeContents := mload(nodeAddr)
+            let encodedStrandOffset := shr(mul(1, 8), nodeContents)
+            keyHash := mload(add(add(add(encoded, 0x20), encodedStrandOffset), 2))
         }
     }
 
@@ -160,18 +199,18 @@ library Quadrable {
     }
 
 
-    function getRoot(Proof memory proof) internal view returns (bytes32) {
+    function getRootNodeAddr(Proof memory proof) internal view returns (uint256 nodeAddr) {
         (uint256 strandState,) = getStrandState(proof, 0);
-        uint256 nodeAddr = strandStateNodeAddr(strandState);
+        nodeAddr = strandStateNodeAddr(strandState);
+    }
 
-        bytes32 root = getNodeHash(nodeAddr);
-        console.logBytes32(root);
-        return root;
+    function getRootHash(Proof memory proof) internal view returns (bytes32) {
+        return getNodeHash(getRootNodeAddr(proof));
     }
 
 
-    // It is very important that this function does not call anything that allocates memory, since it will
-    // try to build a contiguous array of strands starting from the initial free memory pointer.
+    // This function must not call anything that allocates memory, since it builds a
+    // contiguous array of strands starting from the initial free memory pointer.
 
     function _parseStrands(Proof memory proof) private pure {
         bytes memory encoded = proof.encoded;
@@ -220,7 +259,12 @@ library Quadrable {
                 let strandStateMemOffset := add(mload(0x40), mul(128, numStrands)) // FIXME shift left
 
                 if iszero(eq(strandType, 2)) { // StrandType.WitnessEmpty
-                    let nodeContents := or(shl(8, encodedStrandOffset), strandType)
+                    let nodeType := 1 // Default NodeType.Leaf
+                    if eq(strandType, 1) { // ... unless StrandType.WitnessLeaf
+                        nodeType := 3 // then NodeType.WitnessLeaf
+                    }
+
+                    let nodeContents := or(shl(8, encodedStrandOffset), nodeType)
 
                     mstore(0, keyHash)
                     mstore(32, valHash)
@@ -334,6 +378,49 @@ library Quadrable {
 
                 require(currStrand < proof.numStrands, "jumped outside of proof strands");
             }
+        }
+    }
+
+    function get(Proof memory proof, bytes32 keyHash) internal view returns (bool found, bytes memory) {
+        uint256 nodeAddr = getRootNodeAddr(proof);
+        uint256 depthMask = 1 << 255;
+        NodeType nodeType;
+
+        while(true) {
+            nodeType = getNodeType(nodeAddr);
+
+            if (nodeType == NodeType.Branch) {
+                if ((uint256(keyHash) & depthMask) == 0) {
+                    nodeAddr = getNodeBranchRight(nodeAddr);
+                } else {
+                    nodeAddr = getNodeBranchLeft(nodeAddr);
+                }
+
+                depthMask >>= 1;
+                continue;
+            }
+
+            break;
+        }
+
+        if (nodeType == NodeType.Leaf) {
+            bytes32 leafKeyHash = getNodeLeafKeyHash(proof, nodeAddr);
+
+            if (leafKeyHash == keyHash) {
+                return (true, "ASDF");
+            } else {
+                return (false, "");
+            }
+        } else if (nodeType == NodeType.WitnessLeaf) {
+            bytes32 leafKeyHash = getNodeLeafKeyHash(proof, nodeAddr);
+
+            require(leafKeyHash != keyHash, "incomplete tree (WitnessLeaf)");
+
+            return (false, "");
+        } else if (nodeType == NodeType.Empty) {
+            return (false, "");
+        } else {
+            require(false, "incomplete tree (Witness)");
         }
     }
 }
