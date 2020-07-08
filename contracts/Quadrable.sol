@@ -55,13 +55,20 @@ library Quadrable {
         }
     }
 
-    // FIXME: break-out separate function to get keyHash
-    function getStrandState(ProofState memory proof, uint256 strandIndex) private pure returns (uint256 strandState, bytes32 keyHash) {
+    function getStrandState(ProofState memory proof, uint256 strandIndex) private pure returns (uint256 strandState) {
         uint256 strandStateAddr = proof.strandStateAddr;
 
         assembly {
             let addr := add(strandStateAddr, mul(strandIndex, 128)) // FIXME shift left
             strandState := mload(addr)
+        }
+    }
+
+    function getStrandKeyHash(ProofState memory proof, uint256 strandIndex) private pure returns (bytes32 keyHash) {
+        uint256 strandStateAddr = proof.strandStateAddr;
+
+        assembly {
+            let addr := add(strandStateAddr, mul(strandIndex, 128)) // FIXME shift left
             keyHash := mload(add(addr, 32))
         }
     }
@@ -238,18 +245,10 @@ library Quadrable {
         }
     }
 
-    // FIXME: merge these?
-    function getNodeLeafKeyHashAddr(uint256 nodeAddr) private pure returns (uint256 keyHashAddr) {
+    function getNodeLeafKeyHash(uint256 nodeAddr) private pure returns (bytes32 keyHash) {
         assembly {
             let nodeContents := mload(nodeAddr)
-            keyHashAddr := and(shr(mul(1, 8), nodeContents), 0xFFFFFFFF)
-        }
-    }
-
-    function getNodeLeafKeyHash(uint256 nodeAddr) private pure returns (bytes32 keyHash) {
-        uint256 keyHashAddr = getNodeLeafKeyHashAddr(nodeAddr);
-
-        assembly {
+            let keyHashAddr := and(shr(mul(1, 8), nodeContents), 0xFFFFFFFF)
             keyHash := mload(keyHashAddr)
         }
     }
@@ -268,11 +267,13 @@ library Quadrable {
 
         proof.encoded = encoded;
 
-        _parseStrands(proof);
-        _processCmds(proof);
+        parseStrands(proof);
+        processCmds(proof);
 
-        (uint256 strandState,) = getStrandState(proof, 0);
-        (uint256 depth,, uint256 next,) = unpackStrandState(strandState); // FIXME: use individual getters
+        uint256 strandState = getStrandState(proof, 0);
+        uint256 depth = strandStateDepth(strandState);
+        uint256 next = strandStateNext(strandState);
+
         require(next == proof.numStrands, "next linked list not empty");
         require(depth == 0, "strand depth not at root");
 
@@ -283,7 +284,7 @@ library Quadrable {
     // This function must not call anything that allocates memory, since it builds a
     // contiguous array of strands starting from the initial free memory pointer.
 
-    function _parseStrands(ProofState memory proof) private pure {
+    function parseStrands(ProofState memory proof) private pure {
         bytes memory encoded = proof.encoded;
         uint256 offset = 0; // into proof.encoded
         uint256 numStrands = 0;
@@ -373,7 +374,7 @@ library Quadrable {
         proof.startOfCmds = offset;
     }
 
-    function _processCmds(ProofState memory proof) private pure {
+    function processCmds(ProofState memory proof) private pure {
         bytes memory encoded = proof.encoded;
         uint256 offset = proof.startOfCmds;
 
@@ -383,7 +384,8 @@ library Quadrable {
             uint8 cmd = mloadUint8(encoded, offset++);
 
             if ((cmd & 0x80) == 0) {
-                (uint256 strandState, bytes32 keyHash) = getStrandState(proof, currStrand);
+                uint256 strandState = getStrandState(proof, currStrand);
+                bytes32 keyHash = getStrandKeyHash(proof, currStrand);
                 (uint256 depth, uint256 merged, uint256 next, uint256 nodeAddr) = unpackStrandState(strandState);
                 require(merged == 0, "can't operate on merged strand");
 
@@ -391,7 +393,7 @@ library Quadrable {
                     // merge
 
                     require(next != proof.numStrands, "no next strand");
-                    (uint256 nextStrandState,) = getStrandState(proof, next);
+                    uint256 nextStrandState = getStrandState(proof, next);
                     require(depth == strandStateDepth(nextStrandState), "strands at different depths");
 
                     nodeAddr = buildNodeBranch(nodeAddr, strandStateNodeAddr(nextStrandState));
