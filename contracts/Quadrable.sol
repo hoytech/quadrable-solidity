@@ -206,11 +206,29 @@ library Quadrable {
         return nodeContents >> (9*8);
     }
 
-    function setNodeBranchParent(uint256 nodeAddr, uint256 parentAddr) private pure {
+    function setNodeBranchLeft(uint256 nodeAddr, uint256 newAddr) private pure {
+        assembly {
+            let nodeContents := mload(nodeAddr)
+            nodeContents := and(not(shl(mul(5, 8), 0xFFFFFFFF)), nodeContents) // FIXME: check this is getting constant folded
+            nodeContents := or(nodeContents, shl(mul(5, 8), newAddr))
+            mstore(nodeAddr, nodeContents)
+        }
+    }
+
+    function setNodeBranchRight(uint256 nodeAddr, uint256 newAddr) private pure {
+        assembly {
+            let nodeContents := mload(nodeAddr)
+            nodeContents := and(not(shl(mul(1, 8), 0xFFFFFFFF)), nodeContents) // FIXME: check this is getting constant folded
+            nodeContents := or(nodeContents, shl(mul(1, 8), newAddr))
+            mstore(nodeAddr, nodeContents)
+        }
+    }
+
+    function setNodeBranchParent(uint256 nodeAddr, uint256 newAddr) private pure {
         assembly {
             let nodeContents := mload(nodeAddr)
             nodeContents := and(not(shl(mul(9, 8), 0xFFFFFFFF)), nodeContents) // FIXME: check this is getting constant folded
-            nodeContents := or(nodeContents, shl(mul(9, 8), parentAddr))
+            nodeContents := or(nodeContents, shl(mul(9, 8), newAddr))
             mstore(nodeAddr, nodeContents)
         }
     }
@@ -445,6 +463,7 @@ library Quadrable {
 
 
 
+    // FIXME
     // https://github.com/ethereum/solidity-examples/blob/master/src/unsafe/Memory.sol
     uint internal constant WORD_SIZE = 32;
     function copy(uint src, uint dest, uint len) private pure {
@@ -558,7 +577,24 @@ library Quadrable {
             bytes32 foundKeyHash = getNodeLeafKeyHash(nodeAddr);
 
             if (foundKeyHash != keyHash) {
-                require(false, "not impl: splitting");
+                uint256 leafNodeAddr = nodeAddr;
+
+                while (true) {
+                    nodeAddr = buildNodeBranch(0, 0);
+                    setNodeBranchParent(nodeAddr, parentNodeAddr);
+
+                    parentNodeAddr = nodeAddr;
+                    if ((uint256(keyHash) & depthMask) != (uint256(foundKeyHash) & depthMask)) break;
+                    depthMask >>= 1;
+                }
+
+                if ((uint256(keyHash) & depthMask) == 0) {
+                    setNodeBranchRight(nodeAddr, leafNodeAddr);
+                } else {
+                    setNodeBranchLeft(nodeAddr, leafNodeAddr);
+                }
+
+                depthMask >>= 1;
             }
         } else if (nodeType == NodeType.Empty) {
             // fall through
@@ -602,7 +638,7 @@ library Quadrable {
             }
 
             parentNodeAddr = getNodeBranchParent(parentNodeAddr);
-            nodeAddr = buildNodeBranch(leftNodeAddr, rightNodeAddr);
+            nodeAddr = buildNodeBranch(leftNodeAddr, rightNodeAddr); // FIXME: can we re-use the branch memory?
         }
 
         proof.rootNodeAddr = nodeAddr;

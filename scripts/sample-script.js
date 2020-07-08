@@ -118,15 +118,37 @@ testSpecs.push({
     ],
 });
 
-
 testSpecs.push({
     desc: 'add record, split WitnessLeaf',
+    data: {
+        a: 'b',
+        b: 'c',
+    },
+    non: ['x'],
+    put: [
+        ['x', 'new value for x'],
+    ],
+});
+
+testSpecs.push({
+    desc: 'add record, split WitnessLeaf, with extra branch',
+    data: {
+        a: 'b',
+        b: 'c',
+    },
+    non: ['y'],
+    put: [
+        ['y', 'new value for y'],
+    ],
+});
+
+testSpecs.push({
+    desc: '1000 records, add record, split WitnessLeaf',
     data: makeData(1000, i => [i+1, i+1]),
     non: ['5001'],
     put: [
         ['5001', 'new value for 5001'],
     ],
-    skip:1,
 });
 
 
