@@ -50,7 +50,7 @@ library Quadrable {
         uint256 strandStateAddr = proof.strandStateAddr;
 
         assembly {
-            let addr := add(strandStateAddr, mul(strandIndex, 128)) // FIXME shift left
+            let addr := add(strandStateAddr, shl(7, strandIndex)) // strandIndex * 128
             mstore(addr, newStrandState)
         }
     }
@@ -59,7 +59,7 @@ library Quadrable {
         uint256 strandStateAddr = proof.strandStateAddr;
 
         assembly {
-            let addr := add(strandStateAddr, mul(strandIndex, 128)) // FIXME shift left
+            let addr := add(strandStateAddr, shl(7, strandIndex)) // strandIndex * 128
             strandState := mload(addr)
         }
     }
@@ -68,7 +68,7 @@ library Quadrable {
         uint256 strandStateAddr = proof.strandStateAddr;
 
         assembly {
-            let addr := add(strandStateAddr, mul(strandIndex, 128)) // FIXME shift left
+            let addr := add(strandStateAddr, shl(7, strandIndex)) // strandIndex * 128
             keyHash := mload(add(addr, 32))
         }
     }
@@ -210,7 +210,7 @@ library Quadrable {
     function setNodeBranchLeft(uint256 nodeAddr, uint256 newAddr) private pure {
         assembly {
             let nodeContents := mload(nodeAddr)
-            nodeContents := and(not(shl(mul(5, 8), 0xFFFFFFFF)), nodeContents) // FIXME: check this is getting constant folded
+            nodeContents := and(not(shl(mul(5, 8), 0xFFFFFFFF)), nodeContents)
             nodeContents := or(nodeContents, shl(mul(5, 8), newAddr))
             mstore(nodeAddr, nodeContents)
         }
@@ -219,7 +219,7 @@ library Quadrable {
     function setNodeBranchRight(uint256 nodeAddr, uint256 newAddr) private pure {
         assembly {
             let nodeContents := mload(nodeAddr)
-            nodeContents := and(not(shl(mul(1, 8), 0xFFFFFFFF)), nodeContents) // FIXME: check this is getting constant folded
+            nodeContents := and(not(shl(mul(1, 8), 0xFFFFFFFF)), nodeContents)
             nodeContents := or(nodeContents, shl(mul(1, 8), newAddr))
             mstore(nodeAddr, nodeContents)
         }
@@ -228,7 +228,7 @@ library Quadrable {
     function setNodeBranchParent(uint256 nodeAddr, uint256 newAddr) private pure {
         assembly {
             let nodeContents := mload(nodeAddr)
-            nodeContents := and(not(shl(mul(9, 8), 0xFFFFFFFF)), nodeContents) // FIXME: check this is getting constant folded
+            nodeContents := and(not(shl(mul(9, 8), 0xFFFFFFFF)), nodeContents)
             nodeContents := or(nodeContents, shl(mul(9, 8), newAddr))
             mstore(nodeAddr, nodeContents)
         }
@@ -330,7 +330,7 @@ library Quadrable {
             uint256 strandState = packStrandState(depth, 0, numStrands+1, 0);
 
             assembly {
-                let strandStateMemOffset := add(mload(0x40), mul(128, numStrands)) // FIXME shift left
+                let strandStateMemOffset := add(mload(0x40), shl(7, numStrands)) // numStrands * 128
 
                 if iszero(eq(strandType, 3)) { // Only if *not* StrandType.WitnessEmpty
                     mstore(0, keyHash)
@@ -353,7 +353,7 @@ library Quadrable {
         // Bump free memory pointer over strand states we've just setup
 
         assembly {
-            mstore(0x40, add(mload(0x40), mul(128, numStrands))) // FIXME shift left
+            mstore(0x40, add(mload(0x40), shl(7, numStrands))) // numStrands * 128
         }
 
         // Output
