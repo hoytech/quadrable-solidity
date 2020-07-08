@@ -172,9 +172,9 @@ async function main() {
     if (origSpecsLen !== testSpecs.length) console.log("SKIPPING ONE OR MORE TESTS");
 
 
-    const Test = await ethers.getContractFactory("Test");
-    const test = await Test.deploy();
-    await test.deployed();
+    const TestHarness = await ethers.getContractFactory("TestHarness");
+    const testHarness = await TestHarness.deploy();
+    await testHarness.deployed();
 
     for (let spec of testSpecs) {
         console.log(`Running test: ${spec.desc}`);
@@ -206,7 +206,7 @@ async function main() {
             updateVals.push(Buffer.from(p[1]));
         }
 
-        let res = await test.testProof(proofHex, (spec.inc || []).map(i => Buffer.from(i)), updateKeys, updateVals);
+        let res = await testHarness.testProof(proofHex, (spec.inc || []).map(i => Buffer.from(i)), updateKeys, updateVals);
         expect(res[0]).to.equal(rootHex);
         for (let i = 0; i < (spec.inc || []).length; i++) {
             let valHex = res[1][i];
@@ -215,7 +215,7 @@ async function main() {
         }
 
         if (spec.non && spec.non.length) {
-            let res = await test.testProof(proofHex, spec.non.map(i => Buffer.from(i)), [], []);
+            let res = await testHarness.testProof(proofHex, spec.non.map(i => Buffer.from(i)), [], []);
             for (let i = 0; i < spec.non.length; i++) {
                 expect(res[1][i]).to.equal('0x');
             }
@@ -224,7 +224,7 @@ async function main() {
         for (let e of (spec.err || [])) {
             let threw;
             try {
-                await test.testProof(proofHex, [Buffer.from(e)], [], []);
+                await testHarness.testProof(proofHex, [Buffer.from(e)], [], []);
             } catch (e) {
                 threw = '' + e;
             }

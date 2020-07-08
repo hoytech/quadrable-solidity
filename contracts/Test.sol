@@ -3,7 +3,7 @@ pragma experimental ABIEncoderV2;
 
 import "./Quadrable.sol";
 
-contract Test {
+contract TestHarness {
     function testProof(bytes memory encodedProof, bytes[] memory queries, bytes[] memory updateKeys, bytes[] memory updateVals) public view
                  returns (bytes32 origRoot, bytes[] memory queryResults, bytes32 updatedRoot) {
         uint256 rootNodeAddr = Quadrable.importProof(encodedProof);
