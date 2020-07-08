@@ -22,6 +22,7 @@ testSpecs.push({
 });
 
 
+
 testSpecs.push({
     desc: '1000 records, both types of non-inclusion',
     data: makeData(1000, i => [i+1, i+1]),
@@ -157,6 +158,21 @@ testSpecs.push({
 
 
 
+
+if (process.env.GAS_PROFILING) {
+    for (let n of [1, 10, 100, 1000, 10000, 100000, 1000000]) {
+        testSpecs.push({
+            desc: `gas profiling: ${n} records in db`,
+            data: makeData(n, i => [i+1, i+1]),
+            inc: ['1'],
+            put: [['1', '2']],
+        });
+    }
+}
+
+
+
+
 async function main() {
     let quadb_dir = './quadb-test-dir';
     let quadb_cmd = `${quadb} --db ${quadb_dir}`;
@@ -174,6 +190,11 @@ async function main() {
     let origSpecsLen = testSpecs.length;
     testSpecs = testSpecs.filter(s => !s.skip);
     if (origSpecsLen !== testSpecs.length) console.log("SKIPPING ONE OR MORE TESTS");
+
+
+    let logGas = (res) => {
+        console.log(res[3].map(g => g.toNumber()));
+    };
 
 
     const TestHarness = await ethers.getContractFactory("TestHarness");
@@ -212,6 +233,7 @@ async function main() {
 
         let res = await testHarness.testProof(proofHex, (spec.inc || []).map(i => Buffer.from(i)), updateKeys, updateVals);
         expect(res[0]).to.equal(rootHex);
+        logGas(res);
         for (let i = 0; i < (spec.inc || []).length; i++) {
             let valHex = res[1][i];
             valHex = valHex.substr(2); // remove 0x prefix
@@ -220,6 +242,7 @@ async function main() {
 
         if (spec.non && spec.non.length) {
             let res = await testHarness.testProof(proofHex, spec.non.map(i => Buffer.from(i)), [], []);
+            logGas(res);
             for (let i = 0; i < spec.non.length; i++) {
                 expect(res[1][i]).to.equal('0x');
             }
