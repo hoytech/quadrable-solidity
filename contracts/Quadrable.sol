@@ -543,7 +543,7 @@ library Quadrable {
         }
     }
 
-    function put(Proof memory proof, bytes32 keyHash, bytes memory val) internal view {
+    function put(Proof memory proof, bytes32 keyHash, bytes memory val) internal pure {
         uint256 nodeAddr = proof.rootNodeAddr;
         uint256 depthMask = 1 << 255;
         NodeType nodeType;
