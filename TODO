@@ -1,6 +1,2 @@
 - figure out if should use buidler
-- see if mul() is getting constant folded
-  - does it use shr/shl?
-
 - branch building/access/updates is messy
-- gas measurements
