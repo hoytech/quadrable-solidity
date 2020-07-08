@@ -32,7 +32,7 @@ library Quadrable {
         Branch // = 4
     }
 
-    struct Proof {
+    struct ProofState {
         bytes encoded;
 
         uint256 numStrands;
@@ -55,7 +55,7 @@ library Quadrable {
     //              Branch: [4 bytes: parentNodeAddr] [4 bytes: leftNodeAddr] [4 bytes: rightNodeAddr]
     //     bytes32 nodeHash
 
-    function saveStrandState(Proof memory proof, uint256 strandIndex, uint256 newStrandState) private pure {
+    function saveStrandState(ProofState memory proof, uint256 strandIndex, uint256 newStrandState) private pure {
         uint256 strandStateAddr = proof.strandStateAddr;
 
         assembly {
@@ -65,7 +65,7 @@ library Quadrable {
     }
 
     // FIXME: break-out separate function to get keyHash
-    function getStrandState(Proof memory proof, uint256 strandIndex) private pure returns (uint256 strandState, bytes32 keyHash) {
+    function getStrandState(ProofState memory proof, uint256 strandIndex) private pure returns (uint256 strandState, bytes32 keyHash) {
         uint256 strandStateAddr = proof.strandStateAddr;
 
         assembly {
@@ -132,6 +132,20 @@ library Quadrable {
             mstore(add(nodeAddr, 32), nodeHash)
 
             mstore(0x40, add(nodeAddr, 64))
+        }
+    }
+
+    // FIXME: dup'ed code from above
+    function rehashNodeBranch(uint256 nodeAddr, uint256 leftNodeAddr, uint256 rightNodeAddr) private pure {
+        assembly {
+            mstore(32, 0) // Sort of a hack: If the address 0x00 is cast as a nodeAddr, then this makes the nodeHash = 0x00...
+            let leftNodeHash := mload(add(leftNodeAddr, 32))
+            let rightNodeHash := mload(add(rightNodeAddr, 32))
+            mstore(0, leftNodeHash)
+            mstore(32, rightNodeHash)
+
+            let nodeHash := keccak256(0, 64)
+            mstore(add(nodeAddr, 32), nodeHash)
         }
     }
 
@@ -258,8 +272,8 @@ library Quadrable {
     }
 
 
-    function importProof(bytes memory encoded) internal pure returns (Proof memory) {
-        Proof memory proof;
+    function importProof(bytes memory encoded) internal pure returns (uint256 rootNodeAddr) {
+        ProofState memory proof;
 
         proof.encoded = encoded;
 
@@ -271,21 +285,19 @@ library Quadrable {
         require(next == proof.numStrands, "next linked list not empty");
         require(depth == 0, "strand depth not at root");
 
-        proof.rootNodeAddr = strandStateNodeAddr(strandState);
-
-        return proof;
+        return strandStateNodeAddr(strandState);
     }
 
 
-    function getRoot(Proof memory proof) internal pure returns (bytes32) {
-        return getNodeHash(proof.rootNodeAddr);
+    function getRoot(uint256 rootNodeAddr) internal pure returns (bytes32) {
+        return getNodeHash(rootNodeAddr);
     }
 
 
     // This function must not call anything that allocates memory, since it builds a
     // contiguous array of strands starting from the initial free memory pointer.
 
-    function _parseStrands(Proof memory proof) private pure {
+    function _parseStrands(ProofState memory proof) private pure {
         bytes memory encoded = proof.encoded;
         uint256 offset = 0; // into proof.encoded
         uint256 numStrands = 0;
@@ -375,7 +387,7 @@ library Quadrable {
         proof.startOfCmds = offset;
     }
 
-    function _processCmds(Proof memory proof) private pure {
+    function _processCmds(ProofState memory proof) private pure {
         bytes memory encoded = proof.encoded;
         uint256 offset = proof.startOfCmds;
 
@@ -486,8 +498,7 @@ library Quadrable {
     }
 
 
-    function get(Proof memory proof, bytes32 keyHash) internal pure returns (bool found, bytes memory) {
-        uint256 nodeAddr = proof.rootNodeAddr;
+    function get(uint256 nodeAddr, bytes32 keyHash) internal pure returns (bool found, bytes memory) {
         uint256 depthMask = 1 << 255;
         NodeType nodeType;
 
@@ -543,8 +554,7 @@ library Quadrable {
         }
     }
 
-    function put(Proof memory proof, bytes32 keyHash, bytes memory val) internal pure {
-        uint256 nodeAddr = proof.rootNodeAddr;
+    function put(uint256 nodeAddr, bytes32 keyHash, bytes memory val) internal pure returns (uint256) {
         uint256 depthMask = 1 << 255;
         NodeType nodeType;
         uint256 parentNodeAddr = 0;
@@ -637,10 +647,14 @@ library Quadrable {
                 rightNodeAddr = nodeAddr;
             }
 
+            nodeAddr = parentNodeAddr;
+            setNodeBranchLeft(nodeAddr, leftNodeAddr);
+            setNodeBranchRight(nodeAddr, rightNodeAddr);
+            rehashNodeBranch(nodeAddr, leftNodeAddr, rightNodeAddr);
+
             parentNodeAddr = getNodeBranchParent(parentNodeAddr);
-            nodeAddr = buildNodeBranch(leftNodeAddr, rightNodeAddr); // FIXME: can we re-use the branch memory?
         }
 
-        proof.rootNodeAddr = nodeAddr;
+        return nodeAddr;
     }
 }
