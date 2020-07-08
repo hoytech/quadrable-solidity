@@ -94,7 +94,7 @@ testSpecs.push({
         ['b', 'hello'],
         ['a', 'hello'],
     ],
-})
+});
 
 
 testSpecs.push({
@@ -106,8 +106,28 @@ testSpecs.push({
         ['201', 'new value for 201'],
         ['202', 'new value for 202'],
     ],
-})
+});
 
+
+testSpecs.push({
+    desc: 'add record to WitnessEmpty',
+    data: makeData(1000, i => [i+1, i+1]),
+    non: ['5000'],
+    put: [
+        ['5000', 'new value for 5000'],
+    ],
+});
+
+
+testSpecs.push({
+    desc: 'add record, split WitnessLeaf',
+    data: makeData(1000, i => [i+1, i+1]),
+    non: ['5001'],
+    put: [
+        ['5001', 'new value for 5001'],
+    ],
+    dev:1,
+});
 
 
 
@@ -160,9 +180,9 @@ async function main() {
             updateVals.push(Buffer.from(p[1]));
         }
 
-        let res = await test.testProof(proofHex, spec.inc.map(i => Buffer.from(i)), updateKeys, updateVals);
+        let res = await test.testProof(proofHex, (spec.inc || []).map(i => Buffer.from(i)), updateKeys, updateVals);
         expect(res[0]).to.equal(rootHex);
-        for (let i = 0; i < spec.inc.length; i++) {
+        for (let i = 0; i < (spec.inc || []).length; i++) {
             let valHex = res[1][i];
             valHex = valHex.substr(2); // remove 0x prefix
             expect(Buffer.from(valHex, 'hex').toString()).to.equal(spec.data[spec.inc[i]]);

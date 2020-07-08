@@ -231,13 +231,6 @@ library Quadrable {
         }
     }
 
-    // FIXME: organize
-    function deref(uint256 addr) private pure returns (bytes32 output) {
-        assembly {
-            output := mload(addr)
-        }
-    }
-
     function getNodeLeafVal(uint256 nodeAddr) private pure returns (uint256 valAddr, uint256 valLen) {
         assembly {
             let nodeContents := mload(nodeAddr)
@@ -559,6 +552,23 @@ library Quadrable {
         }
 
 
+        // Do splitting
+
+        if (nodeType == NodeType.Leaf || nodeType == NodeType.WitnessLeaf) {
+            bytes32 foundKeyHash = getNodeLeafKeyHash(nodeAddr);
+
+            if (foundKeyHash != keyHash) {
+                require(false, "not impl: splitting");
+            }
+        } else if (nodeType == NodeType.Empty) {
+            // fall through
+        } else {
+            require(false, "incomplete tree (Witness)");
+        }
+
+
+        // Construct new Leaf
+
         uint256 keyHashAddr;
         uint256 valLen;
         uint256 valAddr;
@@ -575,21 +585,7 @@ library Quadrable {
         nodeAddr = buildNodeLeaf(buildNodeContentsLeaf(valAddr, valLen, keyHashAddr), valAddr, valLen, keyHash);
 
 
-        if (nodeType == NodeType.Leaf || nodeType == NodeType.WitnessLeaf) {
-            bytes32 foundKeyHash = getNodeLeafKeyHash(nodeAddr);
-
-            if (foundKeyHash == keyHash) {
-                // replacing
-            } else {
-                require(false, "not impl: splitting");
-            }
-        } else if (nodeType == NodeType.Empty) {
-            require(false, "not impl: adding");
-            //return (false, "");
-        } else {
-            require(false, "incomplete tree (Witness)");
-        }
-
+        // Update path back up the tree
 
         while (parentNodeAddr != 0) {
             depthMask <<= 1;
@@ -608,7 +604,6 @@ library Quadrable {
             parentNodeAddr = getNodeBranchParent(parentNodeAddr);
             nodeAddr = buildNodeBranch(leftNodeAddr, rightNodeAddr);
         }
-
 
         proof.rootNodeAddr = nodeAddr;
     }
