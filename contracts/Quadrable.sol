@@ -1,6 +1,6 @@
 pragma solidity ^0.6.0;
 
-import "@nomiclabs/buidler/console.sol";
+//import "@nomiclabs/buidler/console.sol";
 
 
 // Strand state (128 bytes):
@@ -104,10 +104,8 @@ library Quadrable {
 
         assembly {
             nodeAddr := mload(0x40)
-
             mstore(nodeAddr, nodeContents)
             mstore(add(nodeAddr, 32), nodeHash)
-
             mstore(0x40, add(nodeAddr, 64))
         }
     }
@@ -144,19 +142,20 @@ library Quadrable {
                        uint256(NodeType.Leaf);
     }
 
-    function buildNodeLeaf(uint256 nodeContents, uint256 valAddr, uint256 valLen, bytes32 keyHash) private pure returns (uint256 nodeAddr) {
-        assembly {
-            let valHash := keccak256(valAddr, valLen)
+    function buildNodeLeaf(uint256 valAddr, uint256 valLen, uint256 keyHashAddr) private pure returns (uint256 nodeAddr) {
+        uint256 nodeContents = buildNodeContentsLeaf(valAddr, valLen, keyHashAddr);
 
-            nodeAddr := mload(0x40)
+        assembly {
+            let keyHash := mload(keyHashAddr)
+            let valHash := keccak256(valAddr, valLen)
 
             mstore(0, keyHash)
             mstore(32, valHash)
             let nodeHash := keccak256(0, 65) // relies on most-significant byte of free space pointer being '\0'
 
+            nodeAddr := mload(0x40)
             mstore(nodeAddr, nodeContents)
             mstore(add(nodeAddr, 32), nodeHash)
-
             mstore(0x40, add(nodeAddr, 64))
         }
     }
@@ -294,7 +293,7 @@ library Quadrable {
             uint8 depth = mloadUint8(encoded, offset++);
 
             uint256 keyHashAddr;
-            assembly { keyHashAddr := add(add(encoded, 0x20), offset) }
+            assembly { keyHashAddr := add(add(encoded, 32), offset) }
             bytes32 keyHash = mloadBytes32(encoded, offset);
             offset += 32;
 
@@ -312,7 +311,7 @@ library Quadrable {
                 uint256 valAddr;
 
                 assembly {
-                    valAddr := add(add(encoded, 0x20), offset)
+                    valAddr := add(add(encoded, 32), offset)
                     valHash := keccak256(valAddr, valLen)
                 }
 
@@ -583,7 +582,7 @@ library Quadrable {
             valAddr := add(val, 32)
         }
 
-        nodeAddr = buildNodeLeaf(buildNodeContentsLeaf(valAddr, valLen, keyHashAddr), valAddr, valLen, keyHash);
+        nodeAddr = buildNodeLeaf(valAddr, valLen, keyHashAddr);
 
 
         // Update path back up the tree
