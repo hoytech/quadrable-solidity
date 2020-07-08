@@ -50,7 +50,7 @@ library Quadrable {
     //                Leaf: [4 bytes: valAddr] [4 bytes: valLen] [4 bytes: keyHashAddr]
     //         WitnessLeaf: [4 bytes: keyHashAddr]
     //             Witness: unused
-    //              Branch: [4 bytes: leftNodeAddr] [4 bytes: rightNodeAddr]
+    //              Branch: [4 bytes: parentNodeAddr] [4 bytes: leftNodeAddr] [4 bytes: rightNodeAddr]
     //     bytes32 nodeHash
 
     function saveStrandState(Proof memory proof, uint256 strandIndex, uint256 newStrandState) private pure {
@@ -166,7 +166,26 @@ library Quadrable {
             nodeContents := mload(nodeAddr)
         }
 
-        return nodeContents >> (5*8);
+        return (nodeContents >> (5*8)) & 0xFFFFFFFF;
+    }
+
+    function getNodeBranchParent(uint256 nodeAddr) private pure returns (uint256) {
+        uint256 nodeContents;
+
+        assembly {
+            nodeContents := mload(nodeAddr)
+        }
+
+        return nodeContents >> (9*8);
+    }
+
+    function setNodeBranchParent(uint256 nodeAddr, uint256 parentAddr) private pure {
+        assembly {
+            let nodeContents := mload(nodeAddr)
+            nodeContents := and(not(shl(mul(9, 8), 0xFFFFFFFF)), nodeContents) // FIXME: check this is getting constant folded
+            nodeContents := or(nodeContents, shl(mul(9, 8), parentAddr))
+            mstore(nodeAddr, nodeContents)
+        }
     }
 
     function getNodeLeafKeyHash(uint256 nodeAddr) private pure returns (bytes32 keyHash) {
@@ -278,7 +297,7 @@ library Quadrable {
             assembly {
                 let strandStateMemOffset := add(mload(0x40), mul(128, numStrands)) // FIXME shift left
 
-                if iszero(eq(strandType, 2)) { // StrandType.WitnessEmpty
+                if iszero(eq(strandType, 2)) { // Only if *not* StrandType.WitnessEmpty
                     mstore(0, keyHash)
                     mstore(32, valHash)
                     let nodeHash := keccak256(0, 65) // relies on most-significant byte of free space pointer being '\0'
@@ -471,6 +490,44 @@ library Quadrable {
             return (false, "");
         } else if (nodeType == NodeType.Empty) {
             return (false, "");
+        } else {
+            require(false, "incomplete tree (Witness)");
+        }
+    }
+
+    function put(Proof memory proof, bytes32 keyHash, bytes memory val) internal pure {
+        uint256 nodeAddr = getRootNodeAddr(proof);
+        uint256 depthMask = 1 << 255;
+        NodeType nodeType;
+        uint256 parentNodeAddr = 0;
+
+        while(true) {
+            nodeType = getNodeType(nodeAddr);
+
+            if (nodeType == NodeType.Branch) {
+                parentNodeAddr = nodeAddr;
+
+                if ((uint256(keyHash) & depthMask) == 0) {
+                    nodeAddr = getNodeBranchRight(nodeAddr);
+                } else {
+                    nodeAddr = getNodeBranchLeft(nodeAddr);
+                }
+
+                setNodeBranchParent(nodeAddr, parentNodeAddr);
+
+                depthMask >>= 1;
+                continue;
+            }
+
+            break;
+        }
+
+        if (nodeType == NodeType.Leaf || nodeType == NodeType.WitnessLeaf) {
+            require(false, "not impl: splitting");
+        } else if (nodeType == NodeType.Empty) {
+            require(false, "not impl: adding");
+            //nodeAddr = createLeaf
+            //return (false, "");
         } else {
             require(false, "incomplete tree (Witness)");
         }
