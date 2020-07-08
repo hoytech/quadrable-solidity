@@ -7,21 +7,9 @@ import "./BytesLib.sol";
 library Quadrable {
     enum StrandType {
         Leaf, // = 0,
-        WitnessLeaf, // = 1,
-        WitnessEmpty, // = 2,
-        Unused3,
-        Unused4,
-        Unused5,
-        Unused6,
-        Unused7,
-        Unused8,
-        Unused9,
-        Unused10,
-        Unused11,
-        Unused12,
-        Unused13,
-        Unused14,
-        Invalid // = 15,
+        Invalid, // = 1,
+        WitnessLeaf, // = 2,
+        WitnessEmpty // = 3,
     }
 
     enum NodeType { // Internal values (different from C++ implementation)
@@ -356,7 +344,7 @@ library Quadrable {
             assembly {
                 let strandStateMemOffset := add(mload(0x40), mul(128, numStrands)) // FIXME shift left
 
-                if iszero(eq(strandType, 2)) { // Only if *not* StrandType.WitnessEmpty
+                if iszero(eq(strandType, 3)) { // Only if *not* StrandType.WitnessEmpty
                     mstore(0, keyHash)
                     mstore(32, valHash)
                     let nodeHash := keccak256(0, 65) // relies on most-significant byte of free space pointer being '\0'

@@ -14,7 +14,7 @@ contract Test {
         queryResults = new bytes[](queries.length);
 
         for (uint256 i = 0; i < queries.length; i++) {
-            // For test purposes, use empty string as "not found"
+            // For test purposes, use empty string as "not found" sentinel
             (bool found, bytes memory res) = Quadrable.get(rootNodeAddr, keccak256(abi.encodePacked(queries[i])));
 
             if (found) require(res.length != 0, "unexpected empty string when record found (test problem)");
