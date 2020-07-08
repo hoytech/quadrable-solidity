@@ -8,7 +8,7 @@ contract TestHarness {
                  returns (bytes32 origRoot, bytes[] memory queryResults, bytes32 updatedRoot) {
         uint256 rootNodeAddr = Quadrable.importProof(encodedProof);
 
-        origRoot = Quadrable.getRoot(rootNodeAddr);
+        origRoot = Quadrable.getNodeHash(rootNodeAddr);
 
 
         queryResults = new bytes[](queries.length);
@@ -31,6 +31,6 @@ contract TestHarness {
         }
 
 
-        updatedRoot = Quadrable.getRoot(rootNodeAddr);
+        updatedRoot = Quadrable.getNodeHash(rootNodeAddr);
     }
 }

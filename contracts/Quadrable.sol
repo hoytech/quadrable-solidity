@@ -173,7 +173,7 @@ library Quadrable {
         }
     }
 
-    function getNodeHash(uint256 nodeAddr) private pure returns (bytes32 nodeHash) {
+    function getNodeHash(uint256 nodeAddr) internal pure returns (bytes32 nodeHash) {
         if (nodeAddr == 0) return bytes32(uint256(0));
 
         assembly {
@@ -277,11 +277,6 @@ library Quadrable {
         require(depth == 0, "strand depth not at root");
 
         return strandStateNodeAddr(strandState);
-    }
-
-
-    function getRoot(uint256 rootNodeAddr) internal pure returns (bytes32) {
-        return getNodeHash(rootNodeAddr);
     }
 
 
