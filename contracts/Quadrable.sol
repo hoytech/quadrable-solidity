@@ -117,26 +117,16 @@ library Quadrable {
 
         assembly {
             nodeAddr := mload(0x40)
-
             mstore(nodeAddr, nodeContents)
-
-            mstore(32, 0) // Sort of a hack: If the address 0x00 is cast as a nodeAddr, then this makes the nodeHash = 0x00...
-            let leftNodeHash := mload(add(leftNodeAddr, 32))
-            let rightNodeHash := mload(add(rightNodeAddr, 32))
-            mstore(0, leftNodeHash)
-            mstore(32, rightNodeHash)
-
-            let nodeHash := keccak256(0, 64)
-            mstore(add(nodeAddr, 32), nodeHash)
-
             mstore(0x40, add(nodeAddr, 64))
         }
+
+        hashNodeBranch(nodeAddr, leftNodeAddr, rightNodeAddr);
     }
 
-    // FIXME: dup'ed code from above
-    function rehashNodeBranch(uint256 nodeAddr, uint256 leftNodeAddr, uint256 rightNodeAddr) private pure {
+    function hashNodeBranch(uint256 nodeAddr, uint256 leftNodeAddr, uint256 rightNodeAddr) private pure {
         assembly {
-            mstore(32, 0) // Sort of a hack: If the address 0x00 is cast as a nodeAddr, then this makes the nodeHash = 0x00...
+            mstore(32, 0) // If leftNodeAddr or rightNodeAddr is 0, then this makes their nodeHash = 0x00...
             let leftNodeHash := mload(add(leftNodeAddr, 32))
             let rightNodeHash := mload(add(rightNodeAddr, 32))
             mstore(0, leftNodeHash)
@@ -170,7 +160,6 @@ library Quadrable {
             mstore(0x40, add(nodeAddr, 64))
         }
     }
-
 
     function getNodeType(uint256 nodeAddr) private pure returns (NodeType nodeType) {
         if (nodeAddr == 0) return NodeType.Empty;
@@ -282,7 +271,7 @@ library Quadrable {
 
 
     // This function must not call anything that allocates memory, since it builds a
-    // contiguous array of strands starting from the initial free memory pointer.
+    // contiguous array of strand states starting from the initial free memory pointer.
 
     function parseStrands(ProofState memory proof) private pure {
         bytes memory encoded = proof.encoded;
@@ -361,7 +350,7 @@ library Quadrable {
             numStrands++;
         }
 
-        // Bump free memory pointer over strand state we've just setup
+        // Bump free memory pointer over strand states we've just setup
 
         assembly {
             mstore(0x40, add(mload(0x40), mul(128, numStrands))) // FIXME shift left
@@ -616,7 +605,7 @@ library Quadrable {
             nodeAddr = parentNodeAddr;
             setNodeBranchLeft(nodeAddr, leftNodeAddr);
             setNodeBranchRight(nodeAddr, rightNodeAddr);
-            rehashNodeBranch(nodeAddr, leftNodeAddr, rightNodeAddr);
+            hashNodeBranch(nodeAddr, leftNodeAddr, rightNodeAddr);
 
             parentNodeAddr = getNodeBranchParent(parentNodeAddr);
         }
