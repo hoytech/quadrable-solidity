@@ -8,7 +8,7 @@ contract Test {
                  returns (bytes32 origRoot, bytes[] memory queryResults, bytes32 updatedRoot) {
         Quadrable.Proof memory proof = Quadrable.importProof(encodedProof);
 
-        origRoot = Quadrable.getRootHash(proof);
+        origRoot = Quadrable.getRoot(proof);
 
 
         queryResults = new bytes[](queries.length);
@@ -27,6 +27,6 @@ contract Test {
         }
 
 
-        updatedRoot = Quadrable.getRootHash(proof);
+        updatedRoot = Quadrable.getRoot(proof);
     }
 }

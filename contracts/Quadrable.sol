@@ -38,6 +38,8 @@ library Quadrable {
         uint256 numStrands;
         uint256 strandStateAddr; // memory address where strand states start
         uint256 startOfCmds; // offset within encoded where cmds start
+
+        uint256 rootNodeAddr;
     }
 
     // Strand state (128 bytes):
@@ -133,6 +135,31 @@ library Quadrable {
         }
     }
 
+    function buildNodeContentsLeaf(uint256 valAddr, uint256 valLen, uint256 keyHashAddr) private pure returns (uint256 nodeContents) {
+        nodeContents = valAddr << (9*8) |
+                       valLen << (5*8) |
+                       keyHashAddr << (1*8) |
+                       uint256(NodeType.Leaf);
+    }
+
+    function buildNodeLeaf(uint256 nodeContents, uint256 valAddr, uint256 valLen, bytes32 keyHash) private pure returns (uint256 nodeAddr) {
+        assembly {
+            let valHash := keccak256(valAddr, valLen)
+
+            nodeAddr := mload(0x40)
+
+            mstore(0, keyHash)
+            mstore(32, valHash)
+            let nodeHash := keccak256(0, 65) // relies on most-significant byte of free space pointer being '\0'
+
+            mstore(nodeAddr, nodeContents)
+            mstore(add(nodeAddr, 32), nodeHash)
+
+            mstore(0x40, add(nodeAddr, 64))
+        }
+    }
+
+
     function getNodeType(uint256 nodeAddr) private pure returns (NodeType nodeType) {
         if (nodeAddr == 0) return NodeType.Empty;
 
@@ -156,7 +183,7 @@ library Quadrable {
             nodeContents := mload(nodeAddr)
         }
 
-        return (nodeContents >> (1*8)) & 0xFFFFFFFF;
+        return (nodeContents >> (5*8)) & 0xFFFFFFFF;
     }
 
     function getNodeBranchRight(uint256 nodeAddr) private pure returns (uint256) {
@@ -166,7 +193,7 @@ library Quadrable {
             nodeContents := mload(nodeAddr)
         }
 
-        return (nodeContents >> (5*8)) & 0xFFFFFFFF;
+        return (nodeContents >> (1*8)) & 0xFFFFFFFF;
     }
 
     function getNodeBranchParent(uint256 nodeAddr) private pure returns (uint256) {
@@ -188,11 +215,26 @@ library Quadrable {
         }
     }
 
-    function getNodeLeafKeyHash(uint256 nodeAddr) private pure returns (bytes32 keyHash) {
+    // FIXME: merge these?
+    function getNodeLeafKeyHashAddr(uint256 nodeAddr) private pure returns (uint256 keyHashAddr) {
         assembly {
             let nodeContents := mload(nodeAddr)
-            let keyHashAddr := and(shr(mul(1, 8), nodeContents), 0xFFFFFFFF)
+            keyHashAddr := and(shr(mul(1, 8), nodeContents), 0xFFFFFFFF)
+        }
+    }
+
+    function getNodeLeafKeyHash(uint256 nodeAddr) private pure returns (bytes32 keyHash) {
+        uint256 keyHashAddr = getNodeLeafKeyHashAddr(nodeAddr);
+
+        assembly {
             keyHash := mload(keyHashAddr)
+        }
+    }
+
+    // FIXME: organize
+    function deref(uint256 addr) private pure returns (bytes32 output) {
+        assembly {
+            output := mload(addr)
         }
     }
 
@@ -218,17 +260,14 @@ library Quadrable {
         require(next == proof.numStrands, "next linked list not empty");
         require(depth == 0, "strand depth not at root");
 
+        proof.rootNodeAddr = strandStateNodeAddr(strandState);
+
         return proof;
     }
 
 
-    function getRootNodeAddr(Proof memory proof) internal pure returns (uint256 nodeAddr) {
-        (uint256 strandState,) = getStrandState(proof, 0);
-        nodeAddr = strandStateNodeAddr(strandState);
-    }
-
-    function getRootHash(Proof memory proof) internal pure returns (bytes32) {
-        return getNodeHash(getRootNodeAddr(proof));
+    function getRoot(Proof memory proof) internal pure returns (bytes32) {
+        return getNodeHash(proof.rootNodeAddr);
     }
 
 
@@ -278,10 +317,7 @@ library Quadrable {
                     valHash := keccak256(valAddr, valLen)
                 }
 
-                nodeContents = valAddr << (9*8) |
-                               valLen << (5*8) |
-                               keyHashAddr << (1*8) |
-                               uint256(NodeType.Leaf);
+                nodeContents = buildNodeContentsLeaf(valAddr, valLen, keyHashAddr);
 
                 offset += valLen;
             } else if (strandType == StrandType.WitnessLeaf) {
@@ -439,7 +475,7 @@ library Quadrable {
 
 
     function get(Proof memory proof, bytes32 keyHash) internal pure returns (bool found, bytes memory) {
-        uint256 nodeAddr = getRootNodeAddr(proof);
+        uint256 nodeAddr = proof.rootNodeAddr;
         uint256 depthMask = 1 << 255;
         NodeType nodeType;
 
@@ -448,9 +484,9 @@ library Quadrable {
 
             if (nodeType == NodeType.Branch) {
                 if ((uint256(keyHash) & depthMask) == 0) {
-                    nodeAddr = getNodeBranchRight(nodeAddr);
-                } else {
                     nodeAddr = getNodeBranchLeft(nodeAddr);
+                } else {
+                    nodeAddr = getNodeBranchRight(nodeAddr);
                 }
 
                 depthMask >>= 1;
@@ -495,8 +531,8 @@ library Quadrable {
         }
     }
 
-    function put(Proof memory proof, bytes32 keyHash, bytes memory val) internal pure {
-        uint256 nodeAddr = getRootNodeAddr(proof);
+    function put(Proof memory proof, bytes32 keyHash, bytes memory val) internal view {
+        uint256 nodeAddr = proof.rootNodeAddr;
         uint256 depthMask = 1 << 255;
         NodeType nodeType;
         uint256 parentNodeAddr = 0;
@@ -508,9 +544,9 @@ library Quadrable {
                 parentNodeAddr = nodeAddr;
 
                 if ((uint256(keyHash) & depthMask) == 0) {
-                    nodeAddr = getNodeBranchRight(nodeAddr);
-                } else {
                     nodeAddr = getNodeBranchLeft(nodeAddr);
+                } else {
+                    nodeAddr = getNodeBranchRight(nodeAddr);
                 }
 
                 setNodeBranchParent(nodeAddr, parentNodeAddr);
@@ -522,14 +558,58 @@ library Quadrable {
             break;
         }
 
+
+        uint256 keyHashAddr;
+        uint256 valLen;
+        uint256 valAddr;
+
+        assembly {
+            keyHashAddr := mload(0x40)
+            mstore(keyHashAddr, keyHash)
+            mstore(0x40, add(keyHashAddr, 32))
+
+            valLen := mload(val)
+            valAddr := add(val, 32)
+        }
+
+        nodeAddr = buildNodeLeaf(buildNodeContentsLeaf(valAddr, valLen, keyHashAddr), valAddr, valLen, keyHash);
+
+
         if (nodeType == NodeType.Leaf || nodeType == NodeType.WitnessLeaf) {
-            require(false, "not impl: splitting");
+            bytes32 foundKeyHash = getNodeLeafKeyHash(nodeAddr);
+
+            if (foundKeyHash == keyHash) {
+                // replacing
+            } else {
+                require(false, "not impl: splitting");
+            }
         } else if (nodeType == NodeType.Empty) {
             require(false, "not impl: adding");
-            //nodeAddr = createLeaf
             //return (false, "");
         } else {
             require(false, "incomplete tree (Witness)");
         }
+
+
+        while (parentNodeAddr != 0) {
+            depthMask <<= 1;
+
+            uint256 leftNodeAddr;
+            uint256 rightNodeAddr;
+
+            if ((uint256(keyHash) & depthMask) == 0) {
+                leftNodeAddr = nodeAddr;
+                rightNodeAddr = getNodeBranchRight(parentNodeAddr);
+            } else {
+                leftNodeAddr = getNodeBranchLeft(parentNodeAddr);
+                rightNodeAddr = nodeAddr;
+            }
+
+            parentNodeAddr = getNodeBranchParent(parentNodeAddr);
+            nodeAddr = buildNodeBranch(leftNodeAddr, rightNodeAddr);
+        }
+
+
+        proof.rootNodeAddr = nodeAddr;
     }
 }

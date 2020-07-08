@@ -30,9 +30,7 @@ testSpecs.push({
         '5000', // WitnessEmpty
         '5001', // WitnessLeaf
     ],
-    err: [
-        'b',
-    ],
+    err: ['b'],
 });
 
 
@@ -43,8 +41,72 @@ testSpecs.push({
         ['key'.repeat(100)]: 'value'.repeat(1000),
     },
     inc: ['key'.repeat(100)],
+});
+
+
+
+
+testSpecs.push({
+    desc: 'put update left side',
+    data: {
+        a: 'b',
+        b: 'c',
+    },
+    inc: ['a'],
+    put: [
+        ['a', 'hello'],
+    ],
+});
+
+testSpecs.push({
+    desc: 'put update right side',
+    data: {
+        a: 'b',
+        b: 'c',
+    },
+    inc: ['b'],
+    put: [
+        ['b', 'hello'],
+    ],
+});
+
+testSpecs.push({
+    desc: 'put both sides',
+    data: {
+        a: 'b',
+        b: 'c',
+    },
+    inc: ['a', 'b'],
+    put: [
+        ['a', 'hello'],
+        ['b', 'hello'],
+    ],
+});
+
+testSpecs.push({
+    desc: 'put both sides, other order',
+    data: {
+        a: 'b',
+        b: 'c',
+    },
+    inc: ['a', 'b'],
+    put: [
+        ['b', 'hello'],
+        ['a', 'hello'],
+    ],
 })
 
+
+testSpecs.push({
+    desc: '1000 records, update a few of them',
+    data: makeData(1000, i => [i+1, i+1]),
+    inc: ['200', '201', '202'],
+    put: [
+        ['200', 'new value for 200'],
+        ['201', 'new value for 201'],
+        ['202', 'new value for 202'],
+    ],
+})
 
 
 
@@ -90,7 +152,15 @@ async function main() {
             proofHex = child_process.execSync(`${quadb_cmd} exportProof --hex -- ${proofKeys}`).toString().trim();
         }
 
-        let res = await test.testProof(proofHex, spec.inc.map(i => Buffer.from(i)), [], []);
+        let updateKeys = [];
+        let updateVals = [];
+
+        for (let p of (spec.put || [])) {
+            updateKeys.push(Buffer.from(p[0]));
+            updateVals.push(Buffer.from(p[1]));
+        }
+
+        let res = await test.testProof(proofHex, spec.inc.map(i => Buffer.from(i)), updateKeys, updateVals);
         expect(res[0]).to.equal(rootHex);
         for (let i = 0; i < spec.inc.length; i++) {
             let valHex = res[1][i];
@@ -114,6 +184,18 @@ async function main() {
             }
             expect(threw).to.not.be.undefined;
             expect(threw).to.contain("incomplete tree");
+        }
+
+        if (spec.put && spec.put.length) {
+            let input = '';
+
+            for (let p of (spec.put || [])) {
+                input += `${p[0]},${p[1]}\n`;
+            }
+
+            child_process.execSync(`${quadb_cmd} import`, { input, });
+            let newRootHex = child_process.execSync(`${quadb_cmd} root`).toString().trim();
+            expect(res[2]).to.equal(newRootHex);
         }
     }
 }
