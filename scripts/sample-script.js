@@ -23,7 +23,7 @@ testSpecs.push({
 
 
 testSpecs.push({
-    desc: '1-1000, both types of non-inclusion',
+    desc: '1000 records, both types of non-inclusion',
     data: makeData(1000, i => [i+1, i+1]),
     inc: ['3', '4'],
     non: [
@@ -35,6 +35,15 @@ testSpecs.push({
     ],
 });
 
+
+
+testSpecs.push({
+    desc: 'long key/value',
+    data: {
+        ['key'.repeat(100)]: 'value'.repeat(1000),
+    },
+    inc: ['key'.repeat(100)],
+})
 
 
 
