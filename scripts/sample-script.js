@@ -37,6 +37,14 @@ testSpecs.push({
 
 
 testSpecs.push({
+    desc: 'larger number of strands',
+    data: makeData(1000, i => [i+1, i+1]),
+    inc: Array.from(Array(50).keys()).map(i => `${i+1}`),
+});
+
+
+
+testSpecs.push({
     desc: 'long key/value',
     data: {
         ['key'.repeat(100)]: 'value'.repeat(1000),
