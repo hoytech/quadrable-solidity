@@ -2,8 +2,6 @@ pragma solidity ^0.6.0;
 
 import "@nomiclabs/buidler/console.sol";
 
-import "./BytesLib.sol";
-
 
 // Strand state (128 bytes):
 //     uint256: [0 padding...] [1 byte: depth] [1 byte: merged] [4 bytes: next] [4 bytes: nodeAddr]
@@ -21,6 +19,8 @@ import "./BytesLib.sol";
 
 
 library Quadrable {
+    // Proof import
+
     enum StrandType {
         Leaf, // = 0,
         Invalid, // = 1,
@@ -288,7 +288,7 @@ library Quadrable {
         uint256 offset = 0; // into proof.encoded
         uint256 numStrands = 0;
 
-        require(BytesLib.toUint8(encoded, offset++) == 0, "Only CompactNoKeys encoding supported");
+        require(mloadUint8(encoded, offset++) == 0, "Only CompactNoKeys encoding supported");
 
         uint256 strandStateAddr;
         assembly {
@@ -298,14 +298,14 @@ library Quadrable {
         // Setup strand state and embedded leaf nodes
 
         while (true) {
-            StrandType strandType = StrandType(BytesLib.toUint8(encoded, offset++));
+            StrandType strandType = StrandType(mloadUint8(encoded, offset++));
             if (strandType == StrandType.Invalid) break;
 
-            uint8 depth = BytesLib.toUint8(encoded, offset++);
+            uint8 depth = mloadUint8(encoded, offset++);
 
             uint256 keyHashAddr;
             assembly { keyHashAddr := add(add(encoded, 0x20), offset) }
-            bytes32 keyHash = BytesLib.toBytes32(encoded, offset);
+            bytes32 keyHash = mloadBytes32(encoded, offset);
             offset += 32;
 
             uint256 nodeContents;
@@ -315,7 +315,7 @@ library Quadrable {
                 uint256 valLen = 0;
                 uint8 b;
                 do {
-                    b = BytesLib.toUint8(encoded, offset++); 
+                    b = mloadUint8(encoded, offset++); 
                     valLen = (valLen << 7) | (b & 0x7F);
                 } while ((b & 0x80) != 0);
 
@@ -333,7 +333,7 @@ library Quadrable {
                 nodeContents = keyHashAddr << (1*8) |
                                uint256(NodeType.WitnessLeaf);
 
-                valHash = BytesLib.toBytes32(encoded, offset);
+                valHash = mloadBytes32(encoded, offset);
                 offset += 32;
             }
 
@@ -380,7 +380,7 @@ library Quadrable {
         uint256 currStrand = proof.numStrands - 1;
 
         while (offset < encoded.length) {
-            uint8 cmd = BytesLib.toUint8(encoded, offset++);
+            uint8 cmd = mloadUint8(encoded, offset++);
 
             if ((cmd & 0x80) == 0) {
                 (uint256 strandState, bytes32 keyHash) = getStrandState(proof, currStrand);
@@ -413,7 +413,7 @@ library Quadrable {
 
                             if ((cmd & 1) != 0) {
                                 // HashProvided
-                                bytes32 witness = BytesLib.toBytes32(encoded, offset);
+                                bytes32 witness = mloadBytes32(encoded, offset);
                                 offset += 32;
                                 witnessNodeAddr = buildNodeWitness(witness);
                             } else {
@@ -460,29 +460,7 @@ library Quadrable {
 
 
 
-
-    // FIXME
-    // https://github.com/ethereum/solidity-examples/blob/master/src/unsafe/Memory.sol
-    uint internal constant WORD_SIZE = 32;
-    function copy(uint src, uint dest, uint len) private pure {
-        // Copy word-length chunks while possible
-        for (; len >= WORD_SIZE; len -= WORD_SIZE) {
-            assembly {
-                mstore(dest, mload(src))
-            }
-            dest += WORD_SIZE;
-            src += WORD_SIZE;
-        }
-
-        // Copy remaining bytes
-        uint mask = 256 ** (WORD_SIZE - len) - 1;
-        assembly {
-            let srcpart := and(mload(src), not(mask))
-            let destpart := and(mload(dest), mask)
-            mstore(dest, or(destpart, srcpart))
-        }
-    }
-
+    // get and put
 
     function get(uint256 nodeAddr, bytes32 keyHash) internal pure returns (bool found, bytes memory) {
         uint256 depthMask = 1 << 255;
@@ -521,7 +499,7 @@ library Quadrable {
                     mstore(0x40, add(val, add(valLen, 32)))
                 }
 
-                copy(valAddr, copyDest, valLen);
+                memcpy(copyDest, valAddr, valLen);
 
                 return (true, val);
             } else {
@@ -642,5 +620,42 @@ library Quadrable {
         }
 
         return nodeAddr;
+    }
+
+
+    // Memory utils
+
+    function memcpy(uint dest, uint src, uint len) private pure {
+        while (len >= 32) {
+            assembly {
+                mstore(dest, mload(src))
+            }
+            dest += 32;
+            src += 32;
+            len -= 32;
+        }
+
+        assembly {
+            let sepMask := shl(shl(sub(32, len), 3), 1)
+            let srcPart := and(mload(src), not(sepMask))
+            let destPart := and(mload(dest), sepMask)
+            mstore(dest, or(destPart, srcPart))
+        }
+    }
+
+    function mloadUint8(bytes memory p, uint256 offset) private pure returns (uint8 output) {
+        require(p.length >= (offset + 1), "proof ends prematurely");
+
+        assembly {
+            output := mload(add(add(p, 1), offset))
+        }
+    }
+
+    function mloadBytes32(bytes memory p, uint256 offset) private pure returns (bytes32 output) {
+        require(p.length >= (offset + 32), "proof ends prematurely");
+
+        assembly {
+            output := mload(add(add(p, 32), offset))
+        }
     }
 }

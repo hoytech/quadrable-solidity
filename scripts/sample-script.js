@@ -39,8 +39,12 @@ testSpecs.push({
     desc: 'long key/value',
     data: {
         ['key'.repeat(100)]: 'value'.repeat(1000),
+        ['key'.repeat(101)]: 'value'.repeat(1004),
     },
-    inc: ['key'.repeat(100)],
+    inc: [
+        'key'.repeat(100),
+        'key'.repeat(101),
+    ],
 });
 
 
