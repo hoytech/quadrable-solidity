@@ -126,7 +126,7 @@ testSpecs.push({
     put: [
         ['5001', 'new value for 5001'],
     ],
-    dev:1,
+    skip:1,
 });
 
 
@@ -144,6 +144,10 @@ async function main() {
         testSpecs = specsDevMode;
         console.log("RUNNING IN DEV MODE");
     }
+
+    let origSpecsLen = testSpecs.length;
+    testSpecs = testSpecs.filter(s => !s.skip);
+    if (origSpecsLen !== testSpecs.length) console.log("SKIPPING ONE OR MORE TESTS");
 
 
     const Test = await ethers.getContractFactory("Test");

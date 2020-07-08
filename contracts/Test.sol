@@ -15,7 +15,11 @@ contract Test {
 
         for (uint256 i = 0; i < queries.length; i++) {
             // For test purposes, use empty string as "not found"
-            (, bytes memory res) = Quadrable.get(proof, keccak256(abi.encodePacked(queries[i])));
+            (bool found, bytes memory res) = Quadrable.get(proof, keccak256(abi.encodePacked(queries[i])));
+
+            if (found) require(res.length != 0, "unexpected empty string when record found (test problem)");
+            else require(res.length == 0, "unexpected non-empty string when record not found (code problem)");
+
             queryResults[i] = res;
         }
 
