@@ -1,1 +1,2 @@
-- branch building/access/updates is messy
+- branch/node building/access/updates is messy
+- possible optimization: only pack/unpack strand state after jumping
