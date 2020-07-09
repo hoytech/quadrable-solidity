@@ -181,7 +181,7 @@ if (process.env.GAS_PROFILING) {
 
 
 
-async function main() {
+describe("Quadrable Test Suite", function() {
     let quadb_dir = './quadb-test-dir';
     let quadb_cmd = `${quadb} --db ${quadb_dir}`;
 
@@ -201,85 +201,85 @@ async function main() {
 
 
     let logGas = (res) => {
-        console.log(res[3].map(g => g.toNumber()));
+        if (process.env.GAS_PROFILING) console.log("      GAS:", res[3].map(g => g.toNumber()));
     };
 
 
-    const TestHarness = await ethers.getContractFactory("TestHarness");
-    const testHarness = await TestHarness.deploy();
-    await testHarness.deployed();
-
     for (let spec of testSpecs) {
-        console.log(`Running test: ${spec.desc}`);
+        it(spec.desc, async function() {
+            const TestHarness = await ethers.getContractFactory("TestHarness");
+            const testHarness = await TestHarness.deploy();
+            await testHarness.deployed();
 
-        child_process.execSync(`${quadb_cmd} checkout`);
+            child_process.execSync(`${quadb_cmd} checkout`);
 
-        let rootHex, proofHex;
+            let rootHex, proofHex;
 
-        {
-            let input = '';
+            {
+                let input = '';
 
-            for (let key of Object.keys(spec.data)) {
-                input += `${key},${spec.data[key]}\n`;
+                for (let key of Object.keys(spec.data)) {
+                    input += `${key},${spec.data[key]}\n`;
+                }
+
+                child_process.execSync(`${quadb_cmd} import`, { input, });
+                rootHex = child_process.execSync(`${quadb_cmd} root`).toString().trim();
+
+                let proofKeys = (spec.inc || []).concat(spec.non || []).join(' ');
+
+                proofHex = child_process.execSync(`${quadb_cmd} exportProof --hex -- ${proofKeys}`).toString().trim();
             }
 
-            child_process.execSync(`${quadb_cmd} import`, { input, });
-            rootHex = child_process.execSync(`${quadb_cmd} root`).toString().trim();
-
-            let proofKeys = (spec.inc || []).concat(spec.non || []).join(' ');
-
-            proofHex = child_process.execSync(`${quadb_cmd} exportProof --hex -- ${proofKeys}`).toString().trim();
-        }
-
-        let updateKeys = [];
-        let updateVals = [];
-
-        for (let p of (spec.put || [])) {
-            updateKeys.push(Buffer.from(p[0]));
-            updateVals.push(Buffer.from(p[1]));
-        }
-
-        let res = await testHarness.testProof(proofHex, (spec.inc || []).map(i => Buffer.from(i)), updateKeys, updateVals);
-        expect(res[0]).to.equal(rootHex);
-        logGas(res);
-        for (let i = 0; i < (spec.inc || []).length; i++) {
-            let valHex = res[1][i];
-            valHex = valHex.substr(2); // remove 0x prefix
-            expect(Buffer.from(valHex, 'hex').toString()).to.equal(spec.data[spec.inc[i]]);
-        }
-
-        if (spec.non && spec.non.length) {
-            let res = await testHarness.testProof(proofHex, spec.non.map(i => Buffer.from(i)), [], []);
-            logGas(res);
-            for (let i = 0; i < spec.non.length; i++) {
-                expect(res[1][i]).to.equal('0x');
-            }
-        }
-
-        for (let e of (spec.err || [])) {
-            let threw;
-            try {
-                await testHarness.testProof(proofHex, [Buffer.from(e)], [], []);
-            } catch (e) {
-                threw = '' + e;
-            }
-            expect(threw).to.not.be.undefined;
-            expect(threw).to.contain("incomplete tree");
-        }
-
-        if (spec.put && spec.put.length) {
-            let input = '';
+            let updateKeys = [];
+            let updateVals = [];
 
             for (let p of (spec.put || [])) {
-                input += `${p[0]},${p[1]}\n`;
+                updateKeys.push(Buffer.from(p[0]));
+                updateVals.push(Buffer.from(p[1]));
             }
 
-            child_process.execSync(`${quadb_cmd} import`, { input, });
-            let newRootHex = child_process.execSync(`${quadb_cmd} root`).toString().trim();
-            expect(res[2]).to.equal(newRootHex);
-        }
+            let res = await testHarness.testProof(proofHex, (spec.inc || []).map(i => Buffer.from(i)), updateKeys, updateVals);
+            expect(res[0]).to.equal(rootHex);
+            logGas(res);
+            for (let i = 0; i < (spec.inc || []).length; i++) {
+                let valHex = res[1][i];
+                valHex = valHex.substr(2); // remove 0x prefix
+                expect(Buffer.from(valHex, 'hex').toString()).to.equal(spec.data[spec.inc[i]]);
+            }
+
+            if (spec.non && spec.non.length) {
+                let res = await testHarness.testProof(proofHex, spec.non.map(i => Buffer.from(i)), [], []);
+                logGas(res);
+                for (let i = 0; i < spec.non.length; i++) {
+                    expect(res[1][i]).to.equal('0x');
+                }
+            }
+
+            for (let e of (spec.err || [])) {
+                let threw;
+                try {
+                    await testHarness.testProof(proofHex, [Buffer.from(e)], [], []);
+                } catch (e) {
+                    threw = '' + e;
+                }
+                expect(threw).to.not.be.undefined;
+                expect(threw).to.contain("incomplete tree");
+            }
+
+            if (spec.put && spec.put.length) {
+                let input = '';
+
+                for (let p of (spec.put || [])) {
+                    input += `${p[0]},${p[1]}\n`;
+                }
+
+                child_process.execSync(`${quadb_cmd} import`, { input, });
+                let newRootHex = child_process.execSync(`${quadb_cmd} root`).toString().trim();
+                expect(res[2]).to.equal(newRootHex);
+            }
+        });
     }
-}
+});
 
 
 function makeData(n, cb) {
@@ -290,11 +290,3 @@ function makeData(n, cb) {
     }
     return output;
 }
-
-
-main()
-    .then(() => process.exit(0))
-    .catch(error => {
-      console.error(error);
-      process.exit(1);
-    });
