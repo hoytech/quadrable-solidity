@@ -1,7 +1,7 @@
 /node_modules
 /package-lock.json
-/quadb-test-dir/
+/quadb-test-dir
 
 #Buidler files
-cache
-artifacts
+/cache
+/artifacts
